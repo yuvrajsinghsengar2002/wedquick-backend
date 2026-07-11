@@ -1,0 +1,328 @@
+# WedQuick Backend — BigRock cPanel Deployment Guide
+# =====================================================
+# Complete step-by-step guide to go live on BigRock
+# =====================================================
+
+## WHAT YOU NEED BEFORE STARTING
+- BigRock hosting account with cPanel access
+- Your domain or subdomain (e.g. api.yourdomain.com)
+- FTP credentials OR cPanel File Manager access
+- cPanel login URL (usually: yourdomain.com:2083)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## STEP 1 — SET UP SUBDOMAIN FOR THE API
+
+1. Login to cPanel → Domains → Subdomains
+2. Create subdomain:  api.yourdomain.com
+3. Document root:     /home/cpanelusername/wedquick-backend
+   (NOT inside public_html — keeps backend files private)
+4. Click Create
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## STEP 2 — CREATE MySQL DATABASE
+
+1. cPanel → Databases → MySQL Databases
+2. Create Database:   Enter name → e.g.  wedquick
+   Full name will be: cpanelusername_wedquick
+
+3. Create DB User:    Enter username → e.g.  wquser
+   Full name will be: cpanelusername_wquser
+   Set a STRONG password — save it!
+
+4. Add User to DB:    Select user + database → Grant ALL PRIVILEGES → Add
+
+5. Note down:
+   DB_NAME = cpanelusername_wedquick
+   DB_USER = cpanelusername_wquser
+   DB_PASSWORD = (what you set)
+   DB_HOST = localhost   ← always localhost on cPanel
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## STEP 3 — UPLOAD BACKEND FILES
+
+Option A — File Manager (easiest):
+1. cPanel → Files → File Manager
+2. Navigate to /home/cpanelusername/
+3. Create folder: wedquick-backend
+4. Upload a ZIP of the backend folder → Extract it there
+
+Option B — FTP (FileZilla):
+1. Open FileZilla
+2. Host: ftp.yourdomain.com
+   User: your cPanel username
+   Password: your cPanel password
+   Port: 21
+3. Drag wedquick-backend/ folder to /home/cpanelusername/
+
+FILES TO UPLOAD (entire wedquick-backend folder):
+  wedquick-backend/
+  ├── app.js              ← Passenger entry point
+  ├── package.json
+  ├── .env                ← CREATE this on server (never upload from local)
+  ├── src/
+  │   ├── app.js
+  │   ├── routes/         ← all route files
+  │   ├── middleware/
+  │   └── helpers/
+  ├── config/
+  │   └── db.js
+  ├── sql/
+  │   ├── schema.sql
+  │   └── migrate.js
+  └── public/
+      └── .htaccess
+
+DO NOT UPLOAD: node_modules/ — install on server instead
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## STEP 4 — CREATE .env FILE ON SERVER
+
+1. cPanel → File Manager → Navigate to /home/cpanelusername/wedquick-backend/
+2. Click "+ File" → name it .env
+3. Right-click → Edit → paste the following (fill in your values):
+
+------- PASTE THIS INTO .env --------
+NODE_ENV=production
+PORT=3000
+
+DB_HOST=localhost
+DB_PORT=3306
+DB_NAME=cpanelusername_wedquick
+DB_USER=cpanelusername_wquser
+DB_PASSWORD=YOUR_DB_PASSWORD_HERE
+
+JWT_SECRET=PASTE_64_RANDOM_CHARS_HERE
+JWT_EXPIRES_IN=7d
+JWT_REFRESH_SECRET=PASTE_ANOTHER_64_RANDOM_CHARS_HERE
+JWT_REFRESH_EXPIRES_IN=30d
+
+MSG91_AUTH_KEY=
+MSG91_TEMPLATE_ID=
+MSG91_SENDER_ID=WEDQCK
+
+ZEPTO_TOKEN=
+ZEPTO_FROM_EMAIL=orders@yourdomain.com
+ZEPTO_FROM_NAME=WedQuick
+
+RAZORPAY_KEY_ID=
+RAZORPAY_KEY_SECRET=
+RAZORPAY_WEBHOOK_SECRET=
+
+WABA_TOKEN=
+WABA_PHONE_NUMBER_ID=
+
+AWS_REGION=ap-south-1
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+S3_BUCKET=wedquick-media
+--------------------------------------
+
+To generate JWT_SECRET (run locally):
+  node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## STEP 5 — SET UP NODE.JS APP IN cPANEL
+
+1. cPanel → Software → Setup Node.js App
+2. Click "Create Application"
+
+   Node.js version:        18.x (or highest available)
+   Application mode:       Production
+   Application root:       /home/cpanelusername/wedquick-backend
+   Application URL:        api.yourdomain.com
+   Application startup file: app.js    ← (the root app.js, not src/app.js)
+
+3. Click Create
+4. You will see the app listed with status STOPPED
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## STEP 6 — INSTALL DEPENDENCIES VIA cPANEL TERMINAL
+
+1. cPanel → Advanced → Terminal  (or SSH if available)
+2. Run:
+
+   cd ~/wedquick-backend
+   npm install --production
+
+   This installs all packages from package.json.
+   Ignore any "optional dependency" warnings.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## STEP 7 — RUN DATABASE MIGRATION
+
+Still in Terminal:
+
+   cd ~/wedquick-backend
+   node sql/migrate.js
+
+Expected output:
+   ✅  MySQL connected
+   ▶  Running 40+ SQL statements…
+   ........................................
+   ✅  Migration complete
+
+Alternatively, run schema manually:
+1. cPanel → Databases → phpMyAdmin
+2. Select your database from left panel
+3. Click "SQL" tab at top
+4. Open sql/schema.sql → copy all contents → paste → click Go
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## STEP 8 — START THE APPLICATION
+
+1. cPanel → Setup Node.js App
+2. Find your app → click Run NPM Install (if not done yet)
+3. Click START (▶ button)
+4. Status should show: Running
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## STEP 9 — VERIFY THE API IS LIVE
+
+Open browser or use terminal:
+
+   curl https://api.yourdomain.com/health
+
+Expected response:
+   {"status":"ok","app":"WedQuick API","version":"1.0.0"}
+
+Test OTP endpoint:
+   curl -X POST https://api.yourdomain.com/api/v1/auth/send-otp \
+     -H "Content-Type: application/json" \
+     -d '{"phone":"9876543210"}'
+
+Expected (dev mode):
+   {"success":true,"message":"OTP sent successfully"}
+   (Check Terminal logs for the OTP value in dev)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## STEP 10 — SSL CERTIFICATE (HTTPS)
+
+BigRock provides free AutoSSL:
+1. cPanel → Security → SSL/TLS Status
+2. Click Run AutoSSL
+3. Wait 2–5 minutes
+4. Your API is now available at https://api.yourdomain.com ✅
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## COMPLETE API REFERENCE
+
+Base URL: https://api.yourdomain.com/api/v1
+
+### AUTH
+POST   /auth/send-otp          → Send OTP to phone
+POST   /auth/verify-otp        → Verify OTP, get tokens
+POST   /auth/vendor/login      → Vendor login (email+pass)
+POST   /auth/staff/login       → Admin staff login
+POST   /auth/refresh           → Refresh access token
+POST   /auth/logout            → Revoke refresh token
+
+### PRODUCTS
+GET    /products                → List products (filters: category, pincode, urgent, rental, search)
+GET    /products/:uuid          → Product detail + variants + reviews
+
+### CATEGORIES
+GET    /categories              → All categories
+GET    /categories/:slug/products → Products in category
+
+### ORDERS
+POST   /orders                  → Place order   [USER AUTH]
+GET    /orders                  → My orders      [USER AUTH]
+GET    /orders/:orderNumber     → Order detail   [USER AUTH]
+PUT    /orders/:orderNumber/cancel → Cancel      [USER AUTH]
+
+### RENTALS
+POST   /rentals                 → Book rental    [USER AUTH]
+GET    /rentals                 → My rentals     [USER AUTH]
+
+### CART
+POST   /cart/validate           → Validate cart items + calculate totals [USER AUTH]
+
+### WISHLIST
+GET    /wishlist                → My wishlist    [USER AUTH]
+POST   /wishlist                → Add to wishlist [USER AUTH]
+DELETE /wishlist/:uuid          → Remove         [USER AUTH]
+
+### CUSTOM REQUIREMENTS
+POST   /requirements            → Submit requirement [USER AUTH]
+GET    /requirements            → My requirements    [USER AUTH]
+
+### QUOTATIONS
+GET    /quotations/:uuid        → View quotation     [USER AUTH]
+PUT    /quotations/:uuid/accept → Accept             [USER AUTH]
+PUT    /quotations/:uuid/reject → Reject             [USER AUTH]
+
+### PAYMENTS
+POST   /payments/create-order   → Create Razorpay order [USER AUTH]
+POST   /payments/verify         → Verify payment        [USER AUTH]
+POST   /payments/webhook        → Razorpay webhook
+
+### TRACKING
+GET    /tracking/:orderNumber   → Live order status  [USER AUTH]
+
+### PROFILE
+GET    /profile                 → Get profile + addresses [USER AUTH]
+PUT    /profile                 → Update profile          [USER AUTH]
+POST   /profile/addresses       → Add address             [USER AUTH]
+DELETE /profile/addresses/:id   → Delete address          [USER AUTH]
+
+### BANNERS
+GET    /banners                 → Active banners (public)
+
+### REVIEWS
+POST   /reviews                 → Submit review   [USER AUTH]
+
+### NOTIFICATIONS
+GET    /notifications           → My notifications [USER AUTH]
+PUT    /notifications/read      → Mark all read    [USER AUTH]
+
+### VENDOR PANEL
+POST   /vendor/register         → Vendor registration (public)
+POST   /auth/vendor/login       → Vendor login
+GET    /vendor/dashboard        → Stats           [VENDOR AUTH]
+GET    /vendor/orders           → Orders          [VENDOR AUTH]
+PUT    /vendor/orders/:id/status → Update status  [VENDOR AUTH]
+GET    /vendor/products         → My products     [VENDOR AUTH]
+POST   /vendor/products         → Add product     [VENDOR AUTH]
+PUT    /vendor/products/:uuid   → Update product  [VENDOR AUTH]
+
+### ADMIN PANEL
+POST   /auth/staff/login        → Staff login
+GET    /admin/analytics         → Dashboard stats   [STAFF AUTH]
+GET    /admin/orders            → All orders        [STAFF AUTH]
+PUT    /admin/orders/:id/status → Update order      [STAFF AUTH]
+GET    /admin/vendors           → All vendors       [STAFF AUTH]
+PUT    /admin/vendors/:id/approve → Approve vendor  [SUPER ADMIN]
+PUT    /admin/vendors/:id/block → Block vendor      [SUPER ADMIN]
+GET    /admin/users             → All customers     [STAFF AUTH]
+GET    /admin/requirements      → All requirements  [STAFF AUTH]
+PUT    /admin/requirements/:id/assign → Assign      [STAFF AUTH]
+POST   /admin/quotations        → Create quotation  [STAFF AUTH]
+POST   /admin/banners           → Create banner     [STAFF AUTH]
+PUT    /admin/banners/:id       → Update banner     [STAFF AUTH]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## DEFAULT ADMIN LOGIN
+   Email:    admin@wedquick.in
+   Password: Admin@123
+   CHANGE THIS IMMEDIATELY after first login!
+
+## TROUBLESHOOTING
+- App won't start:   Check Terminal → cd ~/wedquick-backend && node app.js
+                     Read the error message carefully
+- DB connect error:  Verify DB_NAME, DB_USER, DB_PASSWORD in .env
+- 503 errors:        cPanel → Setup Node.js App → Restart
+- OTP not arriving: Check NODE_ENV=production in .env, verify MSG91 keys
+- CORS errors:       Add your app domain to ALLOWED_ORIGINS in .env
+                     e.g. ALLOWED_ORIGINS=https://yourdomain.com,http://localhost:3000
